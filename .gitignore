@@ -1,0 +1,12 @@
+#ignore folder
+_prn/
+obj/
+
+#ifnore files
+*.bin
+*.hex
+*.map
+*_.c
+*.map
+*.abs
+lock
