@@ -1,9 +1,10 @@
+
 /* FILE NAME: rf_checker.c
  * The MIT License (MIT)
  * 
- * Copyright:	(c) 2015 Lapis Semiconductor
- * Author: 		Naotaka Saito
- * Division:	New Business Development Project
+ * Copyright (c) 2015  Lapis Semiconductor Co.,Ltd.
+ * All rights reserved.
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -23,9 +24,19 @@
  * THE SOFTWARE.
 */
 
+#include "ml7396_reg.h"
+
+#define SUBGHZ_CH		33			// channel number (frequency)
+#define CCA_LEVEL       0x65        // 3dBmのときED_VALは12になる。
+
+static uint8_t i=0, ii=0;
+static uint8_t msg[3], tmp_msg[3];
+static uint8_t reg_data, max_rssi, occupancy_rate, ch_num=SUBGHZ_CH;
+
+
 
 const unsigned char pin_order[2][4]={{10,9,8,7},{6,5,4,3}};
-unsigned char get_sw_val(void)
+void get_sw_val(void)
 {
 	unsigned char pin;
 	unsigned char digit;
@@ -51,8 +62,55 @@ unsigned char get_sw_val(void)
 	}
 	num += res;
 	
-	return num;
+	ch_num=num;
 }
+
+
+
+static void create_msg(uint8_t val, uint8_t dectype, uint8_t val_len){
+
+    if (val_len == 2) {
+        Print.init(msg,sizeof(msg));
+    }else{
+        Print.init(msg,sizeof(msg) + 1);
+    }
+
+    if (dectype == HEX) {
+        if(val<16) Print.p("0");
+        Print.l(val,HEX);
+    }else{
+        tmp_msg[0] = val%10;
+        val = val/10;
+        tmp_msg[1] = val%10;
+        val = val/10;
+        tmp_msg[2] = val%10;
+
+        if (val_len == 2) {
+            Print.l(tmp_msg[1],DEC);
+            Print.l(tmp_msg[0],DEC);
+        }else{
+            Print.l(tmp_msg[2],DEC);
+            Print.l(tmp_msg[1],DEC);
+            Print.l(tmp_msg[0],DEC);
+        }
+    }
+
+    lcd.print(msg);
+}
+
+
+
+static void get_rssi(void)
+{
+    for(max_rssi=0, i=0, ii=0; i < 100; i++) {
+        ml7396_regread(REG_ADR_ED_RSLT, &reg_data, 1);
+        if (reg_data > max_rssi)  max_rssi = reg_data;
+        if (reg_data > CCA_LEVEL) ii++;
+        delay(4);
+    }
+    occupancy_rate= ii * 100 / i;
+}
+
 
 
 void setup(){
@@ -61,26 +119,65 @@ void setup(){
 	{
 		pinMode(i,INPUT_PULLDOWN);
 	}
-	
+
 	lcd.init();
     lcd.begin(8, 2,LCD_5x8DOTS);
     lcd.setContrast(30);
-    lcd.print("ﾃﾞｷﾀ!!");
 }
 
+
+
 void loop(){
-	unsigned char num;
-	uint8_t msg[16];
-	Print.init(msg,sizeof(msg));
-	
-	num = get_sw_val();
-	
-	if(num<10)
-	{
-		Print.p("0");
-	}
-	Print.l(num,DEC);
+
+    if (ch_num >= 24 && ch_num <= 61) { 
+        SubGHz.begin(ch_num, 0xABCD,  SUBGHZ_100KBPS, SUBGHZ_PWR_20MW);
+    }
+//  SubGHz.rxEnable(NULL);
+
+    // 2015.07.29 Eiichi Saito CCA中シンクさせない
+    reg_data = 0x00;
+    ml7396_regwrite(REG_ADR_DEMSET3, &reg_data, 1);
+    ml7396_regwrite(REG_ADR_DEMSET14, &reg_data, 1);
+
+    reg_data = 0x30; // CCA無限実行
+    ml7396_regwrite(REG_ADR_CCA_CNTRL, &reg_data, 1);
+
+    reg_data = 0x06;
+    ml7396_regwrite(REG_ADR_RF_STATUS, &reg_data, 1);
+
+//  lcd.clear();
+    lcd.home();
+    lcd.print("100k");
+    lcd.print(" ");
+//  lcd.print("50k");
+//  lcd.print("  ");
+
+    get_sw_val();
+    create_msg(ch_num, DEC, 2);
+    lcd.print("c");
+
     lcd.setCursor(0, 1);
-    lcd.print(msg);
-	delay(100);
+    get_rssi();
+
+    create_msg(occupancy_rate, DEC, 3);
+    lcd.print("%");
+    lcd.print(" ");
+
+    create_msg(max_rssi, HEX, 2);
+    lcd.print(" ");
+
+    reg_data = 0x40; // CCA無限実行
+    ml7396_regwrite(REG_ADR_CCA_CNTRL, &reg_data, 1);
+
+    reg_data = 0x08;
+    ml7396_regwrite(REG_ADR_RF_STATUS, &reg_data, 1);
+
+    // 2015.07.29 Eiichi Saito CCA中シンクさせない
+    reg_data = 0x64;
+    ml7396_regwrite(REG_ADR_DEMSET3, &reg_data, 1);
+    reg_data = 0x27;
+    ml7396_regwrite(REG_ADR_DEMSET14, &reg_data, 1);
+
+	SubGHz.close();
+	delay(500);
 }
