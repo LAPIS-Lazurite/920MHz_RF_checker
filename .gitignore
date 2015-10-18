@@ -9,4 +9,5 @@ obj/
 *_.c
 *.map
 *.abs
+*.DS_Store
 lock
